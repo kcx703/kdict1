@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>默書練習</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 20px;
+        }
+        .header-bar h1 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+        .version-text {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .control-panel {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+        .input-block {
+            margin-bottom: 15px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        #textInput {
+            width: 100%;
+            min-height: 80px;
+            margin: 8px 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .load-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+        }
+        .load-btn:active {
+            background-color: #1976D2;
+        }
+        .btn-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+        }
+        .num-btn {
+            padding: 15px;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 8px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        .num-btn:disabled {
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-bar">
+        <h1>默書練習</h1>
+        <span class="version-text">KC Dictation Ver 0.07</span>
+    </div>
+    
+    <div class="control-panel">
+        <div class="input-block">
+            <label for="fileInput">選擇TXT詞語檔：</label>
+            <input type="file" id="fileInput" accept=".txt">
+        </div>
+
+        <div class="input-block" id="textInputBlock">
+            <label for="textInput">貼上詞語內容（每行一項）：</label>
+            <textarea id="textInput" placeholder="請將詞語貼在此處，每行一個詞語或句子"></textarea>
+            <button class="load-btn" id="loadTextBtn">載入貼上的內容</button>
+        </div>
+        
+        <div class="control-row">
+            <div class="speed-select">
+                <span>語音速度：</span>
+                <label><input type="radio" name="speed" value="0.5">0.5X</label>
+                <label><input type="radio" name="speed" value="0.8">0.8X</label>
+                <label><input type="radio" name="speed" value="1" checked>1X</label>
+                <label><input type="radio" name="speed" value="1.5">1.5X</label>
+            </div>
+            <div class="lang-select">
+                <span>選擇發音語言：</span>
+                <label><input type="radio" name="lang" value="zh-HK" checked> 粵語</label>
+                <label><input type="radio" name="lang" value="en-US"> 英語</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="btn-container" id="btnContainer"></div>
+
+    <script>
+        let wordList = [];
+        const btnContainer = document.getElementById('btnContainer');
+        const fileInput = document.getElementById('fileInput');
+        const textInput = document.getElementById('textInput');
+        const loadTextBtn = document.getElementById('loadTextBtn');
+
+        // 預加載語音列表，提升安卓裝置相容性
+        window.speechSynthesis.onvoiceschanged = function() {
+            window.speechSynthesis.getVoices();
+        };
+
+        // 粵語模式的標點對照表
+        const punctuationZh = {
+            '……': '省略號',
+            '——': '破折號',
+            '。': '句號',
+            '，': '逗號',
+            '？': '問號',
+            '！': '感嘆號',
+            '、': '頓號',
+            '；': '分號',
+            '：': '冒號',
+            '“': '前引號',
+            '”': '後引號',
+            '‘': '前單引號',
+            '’': '後單引號',
+            '（': '左括號',
+            '）': '右括號',
+            '【': '左方括號',
+            '】': '右方括號',
+            '.': '句點',
+            ',': '逗點',
+            '?': '問號',
+            '!': '驚嘆號',
+            ';': '分號',
+            ':': '冒號',
+            '"': '引號',
+            "'": '單引號',
+            '(': '左括號',
+            ')': '右括號',
+            '...': '刪節號'
+        };
+
+        // 英語模式的標點對照表
+        const punctuationEn = {
+            '...': 'ellipsis',
+            '—': 'dash',
+            '.': 'period',
+            ',': 'comma',
+            '?': 'question mark',
+            '!': 'exclamation mark',
+            ';': 'semicolon',
+            ':': 'colon',
+            '"': 'quote',
+            "'": 'apostrophe',
+            '(': 'left parenthesis',
+            ')': 'right parenthesis',
+            '[': 'left bracket',
+            ']': 'right bracket',
+            '。': 'period',
+            '，': 'comma',
+            '？': 'question mark',
+            '！': 'exclamation mark',
+            '；': 'semicolon',
+            '：': 'colon'
+        };
+
+        // 標點轉文字函式
+        function replacePunctuation(text, lang) {
+            const map = lang === 'zh-HK' ? punctuationZh : punctuationEn;
+            let result = text;
+            // 長符號優先替換，避免拆分錯讀
+            Object.keys(map).forEach(symbol => {
+                result = result.split(symbol).join(' ' + map[symbol] + ' ');
+            });
+            return result;
+        }
+
+        // 統一處理詞語內容並生成按鈕
+        function loadContent(content) {
+            wordList = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            renderButtons();
+        }
+
+        // 更新按鈕點擊狀態與顏色
+        function updateButtonState(btn) {
+            let count = parseInt(btn.dataset.clickCount);
+            if (count >= 5) return;
+            count++;
+            btn.dataset.clickCount = count;
+
+            // 5階灰色變化：深灰→淺灰→接近白色
+            const bgColors = [
+                '#4CAF50',
+                '#555555',
+                '#888888',
+                '#aaaaaa',
+                '#cccccc',
+                '#eeeeee'
+            ];
+
+            btn.style.backgroundColor = bgColors[count];
+            
+            // 淺色背景自動切換深色文字，維持可讀性
+            if (count >= 3) {
+                btn.style.color = '#333';
+            }
+
+            // 第5次點擊後禁用按鈕
+            if (count === 5) {
+                btn.disabled = true;
+            }
+        }
+
+        // 動態生成數字按鈕
+        function renderButtons() {
+            btnContainer.innerHTML = '';
+            wordList.forEach((word, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'num-btn';
+                btn.textContent = index + 1;
+                btn.dataset.clickCount = '0';
+                btn.addEventListener('click', function() {
+                    playWord(index);
+                    updateButtonState(this);
+                });
+                btnContainer.appendChild(btn);
+            });
+        }
+        
+        // 讀取TXT檔案
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                loadContent(e.target.result);
+            };
+            reader.readAsText(file, 'UTF-8');
+        });
+
+        // 載入貼上的文字內容，並隱藏輸入區塊
+        loadTextBtn.addEventListener('click', function() {
+            loadContent(textInput.value);
+            document.getElementById('textInputBlock').style.display = 'none';
+        });
+
+        // 播放語音
+        function playWord(index) {
+            if (index >= wordList.length) return;
+            const originalText = wordList[index];
+            const lang = document.querySelector('input[name="lang"]:checked').value;
+            const speed = parseFloat(document.querySelector('input[name="speed"]:checked').value);
+            
+            // 替換標點為對應文字
+            const speakText = replacePunctuation(originalText, lang);
+            
+            // 停止之前的播放
+            window.speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(speakText);
+            utterance.lang = lang;
+            utterance.rate = speed;
+            window.speechSynthesis.speak(utterance);
+        }
+    </script>
+</body>
+</html>
